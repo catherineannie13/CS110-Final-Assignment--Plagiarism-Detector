@@ -1,0 +1,209 @@
+def djb2_hash(substring, q):
+    '''
+    Converts a string to a hash value within the table size (q) using the djb2 algorithm.
+    
+    Parameters
+    ----------
+    substring: str
+        substring for which to compute the hash value
+    base: int
+        multiplier for individual letter values
+    q: int
+        table size (prime number)
+    
+    Returns
+    ---------
+    int
+        an index within the table size (hashed substring value)
+    '''
+    n = len(substring)
+    hash_value = 5381
+    
+    for i in substring:
+        hash_value = (hash_value * 33) + ord(i)
+    
+    return hash_value % q
+
+
+def hash_1(hash_value, q):
+    '''
+    Computes hash function 1 for use in double hashing.
+    
+    Parameters
+    ----------
+    hash_value: int
+        the value of the hash for the current substring
+    q: int
+        prime number table size
+        
+    Returns
+    ---------
+    int
+        hash value 1 (within table size)
+    '''
+    return hash_value % q
+
+
+def hash_2(hash_value, value, table_size):
+    '''
+    Computes hash function 2 for use in double hashing.
+    
+    Parameters
+    ----------
+    hash_value: int
+        the value of the hash for the current substring
+    value: int
+        to compute iterator value in double hashing
+        
+    Returns
+    ---------
+    int
+        hash value 2
+    '''
+    # accounts for potential iterating over same index
+    if value - (hash_value % value) != table_size:
+        return value - (hash_value % value)
+    
+    return value - (hash_value % value) - 1
+    
+def reg_first_string_table_creator(string, k, base, table_size):
+    '''
+    Creates a hash table for a string using rolling hashing. When collisions occur, double
+    hashing is used to find new indexes.
+    
+    Parameters
+    ----------
+    string: str
+        string for which to create the table
+    k: int
+        length of each substring to store in table
+    base: int
+        to compute hash values
+    table_size: int
+        size of hash table (must be larger than string length - k, and a prime number)
+    
+    Returns
+    ---------
+    hash_table: dict
+        hash table storing all contiguous length k substrings in input string, as well as 
+        the index at which they are found in the initial string
+    '''
+    #initialise hash table
+    keys = [i for i in range(table_size)]
+    hash_table = {key: None for key in keys}
+
+    for i in range(len(string)-k+1):
+        substring = string[i:i+k]
+        
+        prev_hash = djb2_hash(substring, table_size)
+        
+        # if slot unoccupied, it can be filled
+        if hash_table[prev_hash] == None:
+            hash_table[prev_hash] = [substring, i]
+
+        # if slot already full, try to find new one using double hashing
+        else:
+            iterator = 1
+            new_index = prev_hash
+            hash1 = hash_1(prev_hash, table_size)
+            hash2 = hash_2(prev_hash, base, table_size)
+                
+            # run until unoccupied slot found
+            while hash_table[new_index] is not None:
+                #print(substring, new_index)
+                new_index = (hash1 + iterator*hash2) % table_size
+                iterator += 1
+                
+                # table full!
+                if iterator == table_size:
+                    raise ValueError('no room left in hash table, increase table size')
+            
+            # insert at new index found through double hashing
+            hash_table[new_index] = [substring, i]
+
+    return hash_table
+
+
+def reg_lookup(prev_hash, base, substring, hash_table, table_size):
+    '''
+    Searches for a substring in a given hash table, returning the list of indexes at which it 
+    can be found.
+    
+    Parameters
+    ----------
+    prev_hash: int
+        value of prev_hash to compute double hashing resolution indexes
+    base: int
+        to compute hash values in double hashing
+    substring: str
+        substring to find in table
+    hash_table: dict
+        hash table in which to find substring
+    table_size: int
+        prime number table size, default large prime number
+    
+    Returns
+    ---------
+    matched_indexes: lst
+        indexes at which substring is found in hash table
+    '''
+    matched_indexes = []
+    iterator = 1
+    
+    # new_index changed with each iteration below, prev_hash must remain same to calculate hash values
+    new_index = prev_hash
+    hash1 = hash_1(prev_hash, table_size)         
+    hash2 = hash_2(prev_hash, base, table_size)
+        
+    # run until unoccupied slot found or entire table iterated through
+    while hash_table[new_index] is not None and iterator < table_size:
+        
+        # accounts for same index, different substring
+        if hash_table[new_index][0] == substring:
+            matched_indexes.append(hash_table[new_index][1]) 
+
+        new_index = (hash1 + iterator*hash2) % table_size
+        iterator += 1
+                       
+    return matched_indexes
+
+    
+def regular_get_match(x, y, k, table_size = 104729):
+    '''
+    Finds indexes of matching substrings of length k between string x and y.
+    Eg. Output [(0, 4), (6, 10)] indicates the substring starting at index 0 in string x matches that at index 4 
+    in string y, and that starting at index 6 in x matches index 10 in y.
+    
+    Parameters
+    ----------
+    x: str
+        first string on which a table is made
+    y: str
+        second string (substrings of which are searched for in table created by x)
+    k: int
+        length of substrings
+    table_size: int
+        length of table size, a prime number larger than string length x
+        
+    Returns
+    --------
+    matches: lst 
+        list of tuples containing indexes that contain matching substrings between x and y
+    '''
+    base = 25
+    matches = []
+    
+    # creates hash table for k-length substrings in x
+    hash_table = reg_first_string_table_creator(x, k, base, table_size)
+    
+    for i in range(len(y)-k+1):
+        substring = y[i:k+i]
+        
+        prev_hash = djb2_hash(substring, table_size)
+        match_list = reg_lookup(prev_hash, base, substring, hash_table, table_size)
+        
+        # append indexes of matches to list of matches (none if list empty)
+        for m in match_list:
+            matches.append((m, i))
+
+    return matches
